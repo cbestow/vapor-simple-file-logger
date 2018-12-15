@@ -9,8 +9,16 @@ import Vapor
 
 public final class SimpleFileLogger: Logger {
     
+    public enum Component {
+        case fileInfo
+        case level
+        case message
+        case timestamp
+    }
+    
     let executableName: String
-    let includeTimestamps: Bool
+    let components: [Component]
+    let separator: String
     let fileManager = FileManager.default
     let fileQueue = DispatchQueue.init(label: "vaporSimpleFileLogger", qos: .utility)
     var fileHandles = [URL: Foundation.FileHandle]()
@@ -38,10 +46,23 @@ public final class SimpleFileLogger: Logger {
         return baseURL
     }()
     
-    public init(executableName: String = "Vapor", includeTimestamps: Bool = false) {
-        // TODO: sanitize executableName for path use
+    public init(executableName: String = "Vapor",
+                includeTimestamps: Bool = false,
+                components: [Component] = [],
+                separator: String = "\u{20}") {
+        var components = components
+        
+        if components.isEmpty {
+            if includeTimestamps {
+                components = [.timestamp]
+            }
+            components += [.level, .message, .fileInfo]
+        }
+        
+        self.components = components
+        self.separator = separator
         self.executableName = executableName
-        self.includeTimestamps = includeTimestamps
+        // TODO: sanitize executableName for path use
     }
     
     deinit {
@@ -52,11 +73,22 @@ public final class SimpleFileLogger: Logger {
     
     public func log(_ string: String, at level: LogLevel, file: String, function: String, line: UInt, column: UInt) {
         let fileName = level.description.lowercased() + ".log"
-        var output = "[ \(level.description) ] \(string) (\(file):\(line))"
-        if includeTimestamps {
-            output = "\(Date() ) " + output
+        var output: [String] = []
+        
+        for component in components {
+            switch component {
+            case .fileInfo:
+                output.append("(\(file):\(line))")
+            case .level:
+                output.append("[ \(level.description) ]")
+            case .message:
+                output.append(string)
+            case .timestamp:
+                output.append(Date().description)
+            }
         }
-        saveToFile(output, fileName: fileName)
+        
+        saveToFile(output.joined(separator: self.separator), fileName: fileName)
     }
     
     func saveToFile(_ string: String, fileName: String) {
